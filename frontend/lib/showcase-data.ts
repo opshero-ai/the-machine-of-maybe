@@ -530,3 +530,175 @@ export const SHOWCASE_CARDS = [
     color: "#f59e0b",
   },
 ];
+
+// ─── Gallery Scenarios ───
+
+export interface GalleryScenario {
+  id: string;
+  title: string;
+  domain: string;
+  domainColor: string;
+  difficulty: "medium" | "hard" | "impossible";
+  prompt: string;
+  summary: string;
+  agents: number;
+  tasks: number;
+  duration: string;
+  outcome: string;
+  keyMetrics: { label: string; value: string }[];
+  highlights: string[];
+  hasExample: boolean;
+}
+
+export const GALLERY_SCENARIOS: GalleryScenario[] = [
+  {
+    id: "dc-outage",
+    title: "Data Center Outage Response",
+    domain: "Infrastructure & SRE",
+    domainColor: "#ef4444",
+    difficulty: "hard",
+    prompt: "A Tier-1 data center just lost power across 3 zones. 10,000 customers are affected, SLA breach is imminent, and the backup generators in Zone B failed their last maintenance check.",
+    summary: "Full incident response coordinated across 6 agents: triage, failover, customer comms, verification, and post-incident hardening.",
+    agents: 6,
+    tasks: 10,
+    duration: "18 min",
+    outcome: "Zero data loss. All 10,000 customers restored within SLA. Root cause identified as faulty UPS firmware. Hardening plan deployed.",
+    keyMetrics: [
+      { label: "Recovery Time", value: "< 45 min" },
+      { label: "Data Loss", value: "Zero" },
+      { label: "SLA Breach", value: "Averted" },
+      { label: "Risks Mitigated", value: "4 of 4" },
+    ],
+    highlights: [
+      "Sentinel flagged stale TLS cert during failover — auto-retry succeeded",
+      "Arbiter escalated Zone B generator issue to human review before proceeding",
+      "Chronicle produced real-time status page updates for customer comms",
+    ],
+    hasExample: true,
+  },
+  {
+    id: "product-launch",
+    title: "Product Launch Sprint",
+    domain: "Go-to-Market",
+    domainColor: "#6366f1",
+    difficulty: "medium",
+    prompt: "We're launching a B2B SaaS product in 72 hours. We have $50K budget, need press coverage, a landing page, email campaign, and partner outreach — but our marketing lead just went on medical leave.",
+    summary: "Rapid go-to-market plan: budget allocation, channel strategy, content calendar, and risk mitigation for the leadership gap.",
+    agents: 5,
+    tasks: 14,
+    duration: "12 min",
+    outcome: "$50K allocated across 4 channels. 72-hour launch timeline with daily checkpoints. Interim marketing lead identified.",
+    keyMetrics: [
+      { label: "Budget Allocated", value: "$50K" },
+      { label: "Channels", value: "4" },
+      { label: "Launch Timeline", value: "72 hrs" },
+      { label: "Contingencies", value: "3 plans" },
+    ],
+    highlights: [
+      "Analyst modeled 3 budget allocation scenarios with ROI projections",
+      "Guardian flagged compliance risk in email campaign targeting",
+      "Operator built parallel workstreams to compress the timeline",
+    ],
+    hasExample: false,
+  },
+  {
+    id: "supply-chain",
+    title: "Supply Chain Disruption Recovery",
+    domain: "Logistics & Operations",
+    domainColor: "#f59e0b",
+    difficulty: "hard",
+    prompt: "Our primary supplier in Shenzhen just shut down due to a factory fire. 200 pending orders, 3 product lines affected. Chinese New Year starts in 10 days — every backup supplier is about to close.",
+    summary: "Emergency procurement, order triage, and multi-supplier diversification with time-critical cultural calendar constraints.",
+    agents: 6,
+    tasks: 11,
+    duration: "15 min",
+    outcome: "3 backup suppliers secured pre-holiday. 200 orders triaged by priority. Long-term dual-sourcing strategy established.",
+    keyMetrics: [
+      { label: "Orders Triaged", value: "200" },
+      { label: "Backup Suppliers", value: "3 secured" },
+      { label: "Delivery Delay", value: "< 2 weeks" },
+      { label: "Revenue Protected", value: "$1.2M" },
+    ],
+    highlights: [
+      "Architect decomposed by product line to enable parallel sourcing",
+      "Analyst identified tier-2 suppliers with pre-CNY shipping capacity",
+      "Escalation Lead negotiated expedited contracts with 2 new vendors",
+    ],
+    hasExample: false,
+  },
+  {
+    id: "cyber-incident",
+    title: "Cybersecurity Incident Response",
+    domain: "Security & Compliance",
+    domainColor: "#a855f7",
+    difficulty: "impossible",
+    prompt: "Our SOC detected lateral movement from a compromised admin account. The attacker has been in our network for an estimated 72 hours. We have 500 employees, handle PII for 2M users, and have a 72-hour breach notification deadline.",
+    summary: "Full NIST-aligned incident response: containment, forensics, regulatory notification, and credential rotation across 500 users.",
+    agents: 6,
+    tasks: 16,
+    duration: "22 min",
+    outcome: "Attacker contained within 4 hours. All 500 credentials rotated. Regulatory notification drafted within deadline. No PII exfiltration confirmed.",
+    keyMetrics: [
+      { label: "Containment", value: "4 hours" },
+      { label: "Credentials Rotated", value: "500" },
+      { label: "PII Exfiltration", value: "None confirmed" },
+      { label: "Compliance", value: "72hr met" },
+    ],
+    highlights: [
+      "Guardian immediately isolated compromised segments before investigation",
+      "Analyst correlated 72-hour access logs across 12 systems",
+      "Arbiter drafted parallel regulatory notifications for 3 jurisdictions",
+    ],
+    hasExample: false,
+  },
+  {
+    id: "regulatory-compliance",
+    title: "Regulatory Compliance Migration",
+    domain: "Legal & Governance",
+    domainColor: "#06b6d4",
+    difficulty: "hard",
+    prompt: "New EU AI Act requirements take effect in 90 days. We have 8 AI-powered products, 3 of which are likely 'high-risk' under the regulation. We need a compliance gap analysis, remediation plan, and documentation framework.",
+    summary: "Comprehensive compliance assessment: product risk classification, gap analysis, remediation roadmap, and documentation templates.",
+    agents: 6,
+    tasks: 13,
+    duration: "19 min",
+    outcome: "All 8 products classified. 3 high-risk products mapped to remediation workstreams. 90-day compliance timeline with weekly milestones.",
+    keyMetrics: [
+      { label: "Products Assessed", value: "8" },
+      { label: "High-Risk", value: "3 flagged" },
+      { label: "Compliance Gap", value: "47 items" },
+      { label: "Timeline", value: "90 days" },
+    ],
+    highlights: [
+      "Architect mapped each product to AI Act risk tiers with confidence scores",
+      "Guardian identified 12 documentation gaps requiring immediate action",
+      "Narrator produced board-ready compliance summary with RAG status",
+    ],
+    hasExample: false,
+  },
+  {
+    id: "ma-integration",
+    title: "Post-Acquisition Integration",
+    domain: "Corporate Strategy",
+    domainColor: "#10b981",
+    difficulty: "impossible",
+    prompt: "We just acquired a 200-person company. Their tech stack is completely different (Ruby/Heroku vs our Python/GCP). We need to merge engineering teams, migrate infrastructure, and retain key talent — all while shipping Q2 features.",
+    summary: "Full integration playbook: org design, tech migration phases, talent retention, and feature delivery continuity plan.",
+    agents: 6,
+    tasks: 18,
+    duration: "25 min",
+    outcome: "4-phase integration plan over 6 months. Key talent retention packages for 15 critical engineers. Parallel feature delivery maintained.",
+    keyMetrics: [
+      { label: "Integration Phases", value: "4" },
+      { label: "Timeline", value: "6 months" },
+      { label: "Key Retention", value: "15 engineers" },
+      { label: "Feature Delivery", value: "Maintained" },
+    ],
+    highlights: [
+      "Analyst modeled 3 migration strategies with cost/timeline trade-offs",
+      "Operator designed parallel workstreams so Q2 features aren't blocked",
+      "Escalation Lead flagged 3 cultural integration risks requiring exec attention",
+    ],
+    hasExample: false,
+  },
+];

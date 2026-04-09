@@ -187,14 +187,21 @@ export default function ForceGraph({
       .attr("fill", "#3b3b40");
 
     // Glow filter for active nodes
-    const glow = defs.append("filter").attr("id", "glow");
+    const glow = defs.append("filter").attr("id", "glow").attr("x", "-50%").attr("y", "-50%").attr("width", "200%").attr("height", "200%");
     glow
       .append("feGaussianBlur")
-      .attr("stdDeviation", "4")
+      .attr("stdDeviation", "6")
       .attr("result", "coloredBlur");
     const merge = glow.append("feMerge");
     merge.append("feMergeNode").attr("in", "coloredBlur");
     merge.append("feMergeNode").attr("in", "SourceGraphic");
+
+    // Stronger glow for edge highlights
+    const edgeGlow = defs.append("filter").attr("id", "edge-glow").attr("x", "-20%").attr("y", "-20%").attr("width", "140%").attr("height", "140%");
+    edgeGlow.append("feGaussianBlur").attr("stdDeviation", "3").attr("result", "blur");
+    const edgeMerge = edgeGlow.append("feMerge");
+    edgeMerge.append("feMergeNode").attr("in", "blur");
+    edgeMerge.append("feMergeNode").attr("in", "SourceGraphic");
 
     // ─── Zoom ───
     const g = svg.append("g");
@@ -263,16 +270,27 @@ export default function ForceGraph({
         d.type === "dependency" ? "url(#arrowhead)" : ""
       );
 
-    // Animated flow on active links
+    // Animated flow + glow on active links
     link
-      .filter((d) => {
+      .filter((d): boolean => {
         const targetNode = nodes.find(
           (n) => n.id === (typeof d.target === "object" ? d.target.id : d.target)
         );
-        return targetNode ? isNodeActive(targetNode) : false;
+        const sourceNode = nodes.find(
+          (n) => n.id === (typeof d.source === "object" ? d.source.id : d.source)
+        );
+        return Boolean((targetNode && isNodeActive(targetNode)) || (sourceNode && isNodeActive(sourceNode)));
       })
       .attr("stroke-dasharray", "8 4")
-      .attr("class", "edge-animated");
+      .attr("stroke-width", 2.5)
+      .attr("stroke", (d) => {
+        const sourceNode = nodes.find(
+          (n) => n.id === (typeof d.source === "object" ? d.source.id : d.source)
+        );
+        return sourceNode ? getNodeColor(sourceNode) : "#3b3b40";
+      })
+      .attr("filter", "url(#edge-glow)")
+      .attr("class", "edge-animated edge-glow");
 
     // ─── Node groups ───
     const node = g
@@ -315,21 +333,56 @@ export default function ForceGraph({
         const active = isNodeActive(d);
         const selected = d.id === selectedNodeId;
 
-        // Outer glow for active
+        // Animated pulse rings for active agents
         if (active) {
+          // Outer breathing glow
           group
             .append("circle")
-            .attr("r", d.radius + 6)
+            .attr("r", d.radius + 8)
+            .attr("fill", "none")
+            .attr("stroke", color)
+            .attr("stroke-width", 1.5)
+            .attr("opacity", 0)
+            .attr("filter", "url(#glow)")
+            .append("animate")
+            .attr("attributeName", "r")
+            .attr("values", `${d.radius + 4};${d.radius + 14};${d.radius + 4}`)
+            .attr("dur", "2.5s")
+            .attr("repeatCount", "indefinite");
+
+          group.select("circle:last-of-type")
+            .append("animate")
+            .attr("attributeName", "opacity")
+            .attr("values", "0.4;0.1;0.4")
+            .attr("dur", "2.5s")
+            .attr("repeatCount", "indefinite");
+
+          // Ripple ring that expands outward
+          group
+            .append("circle")
+            .attr("r", d.radius)
             .attr("fill", "none")
             .attr("stroke", color)
             .attr("stroke-width", 1)
-            .attr("opacity", 0.3)
-            .attr("filter", "url(#glow)");
+            .attr("opacity", 0)
+            .append("animate")
+            .attr("attributeName", "r")
+            .attr("values", `${d.radius};${d.radius + 20}`)
+            .attr("dur", "3s")
+            .attr("repeatCount", "indefinite");
+
+          group.select("circle:last-of-type")
+            .append("animate")
+            .attr("attributeName", "opacity")
+            .attr("values", "0.5;0")
+            .attr("dur", "3s")
+            .attr("repeatCount", "indefinite");
         }
 
-        // Main circle
+        // Main circle with CSS transition class
         group
           .append("circle")
+          .attr("class", "graph-node-circle")
           .attr("r", d.radius)
           .attr("fill", `${color}15`)
           .attr("stroke", selected ? color : `${color}60`)
@@ -377,18 +430,32 @@ export default function ForceGraph({
         const selected = d.id === selectedNodeId;
 
         if (active) {
+          // Pulse ring for active tasks
           group
             .append("circle")
-            .attr("r", d.radius + 4)
+            .attr("r", d.radius + 3)
             .attr("fill", "none")
             .attr("stroke", color)
-            .attr("stroke-width", 0.8)
-            .attr("opacity", 0.3);
+            .attr("stroke-width", 1)
+            .attr("opacity", 0)
+            .append("animate")
+            .attr("attributeName", "r")
+            .attr("values", `${d.radius};${d.radius + 12}`)
+            .attr("dur", "2s")
+            .attr("repeatCount", "indefinite");
+
+          group.select("circle:last-of-type")
+            .append("animate")
+            .attr("attributeName", "opacity")
+            .attr("values", "0.5;0")
+            .attr("dur", "2s")
+            .attr("repeatCount", "indefinite");
         }
 
-        // Main circle
+        // Main circle with CSS transition
         group
           .append("circle")
+          .attr("class", "graph-node-circle")
           .attr("r", d.radius)
           .attr("fill", `${color}20`)
           .attr("stroke", selected ? color : `${color}50`)

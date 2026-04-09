@@ -367,6 +367,15 @@ export default function HomePage() {
             >
               View Example
             </Link>
+
+            {/* Gallery */}
+            <Link
+              href="/gallery"
+              className="rounded-xl px-6 py-3.5 text-sm font-medium transition-all duration-200 hover:scale-[1.02]"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              Browse Gallery &rarr;
+            </Link>
           </motion.div>
         </motion.div>
       </section>
