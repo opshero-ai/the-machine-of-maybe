@@ -7,7 +7,7 @@ import {
   type AgentState,
 } from "@/types/entities";
 
-const RUN_STATUS_COLOR: Record<RunStatus, string> = {
+const RUN_STATUS_COLOR: Record<string, string> = {
   compiling: "#94a3b8",
   planning: "#3b82f6",
   executing: "#f59e0b",
@@ -15,6 +15,11 @@ const RUN_STATUS_COLOR: Record<RunStatus, string> = {
   completed: "#10b981",
   failed: "#ef4444",
   canceled: "#6b7280",
+  // Backend status values
+  pending: "#94a3b8",
+  running: "#f59e0b",
+  waiting_for_input: "#8b5cf6",
+  cancelled: "#6b7280",
 };
 
 const AGENT_STATE_COLOR: Record<AgentState, string> = {

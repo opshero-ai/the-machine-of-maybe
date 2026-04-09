@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { getRun, streamRunEvents } from "@/lib/api";
+import { getRunFull, streamRunEvents } from "@/lib/api";
 import {
   mockRun,
   mockAgents,
@@ -20,6 +20,83 @@ import type {
   Outcome,
   SimulationMode,
 } from "@/types/entities";
+
+// ─── Backend → Frontend Mapping ───
+
+const BACKEND_STATUS_MAP: Record<string, string> = {
+  pending: "compiling",
+  compiling: "compiling",
+  running: "executing",
+  waiting_for_input: "reviewing",
+  completed: "completed",
+  failed: "failed",
+  cancelled: "canceled",
+};
+
+const BACKEND_MODE_MAP: Record<string, SimulationMode> = {
+  full_auto: "play",
+  guided: "explore",
+  step_by_step: "prove",
+};
+
+const BACKEND_TASK_STATUS_MAP: Record<string, string> = {
+  pending: "queued",
+  in_progress: "active",
+  blocked: "blocked",
+  completed: "completed",
+  failed: "failed",
+  skipped: "canceled",
+};
+
+function mapBackendRun(raw: Record<string, unknown>): Partial<Run> {
+  return {
+    id: raw.id as string,
+    scenario_id: raw.scenario_id as string,
+    status: (BACKEND_STATUS_MAP[raw.status as string] ?? raw.status) as Run["status"],
+    mode: (BACKEND_MODE_MAP[raw.mode as string] ?? "explore") as SimulationMode,
+    progress: Math.round(((raw.progress as number) ?? 0) * 100),
+    summary: (raw.current_phase as string) ?? null,
+    started_at: (raw.started_at as string) ?? (raw.created_at as string) ?? new Date().toISOString(),
+    ended_at: (raw.completed_at as string) ?? null,
+    agent_roster: [],
+    task_graph: [],
+  };
+}
+
+function mapBackendAgent(raw: Record<string, unknown>): Agent {
+  return {
+    id: raw.id as string,
+    run_id: raw.run_id as string,
+    name: raw.name as string,
+    role: raw.role as Agent["role"],
+    capabilities: [],
+    confidence: 0.75,
+    state: raw.state as Agent["state"],
+    current_task_id: (raw.current_task_id as string) ?? null,
+    last_action: null,
+    messages_sent: (raw.actions_taken as number) ?? 0,
+    messages_received: 0,
+  };
+}
+
+function mapBackendTask(raw: Record<string, unknown>): Task {
+  return {
+    id: raw.id as string,
+    run_id: raw.run_id as string,
+    title: raw.title as string,
+    description: raw.description as string,
+    status: (BACKEND_TASK_STATUS_MAP[raw.status as string] ?? raw.status) as Task["status"],
+    owner_agent_id: (raw.assigned_agent_id as string) ?? null,
+    depends_on: (raw.dependencies as string[]) ?? [],
+    risk_level: (raw.risk_level as Task["risk_level"]) ?? "low",
+    phase: "",
+    confidence: 0.5,
+    started_at: (raw.started_at as string) ?? null,
+    completed_at: (raw.completed_at as string) ?? null,
+    retry_count: (raw.retry_count as number) ?? 0,
+    failure_reason: (raw.error as string) ?? null,
+  };
+}
 import ModeToggle from "@/components/shared/ModeToggle";
 import StatusBadge from "@/components/shared/StatusBadge";
 import TimelineStream from "@/components/timeline/TimelineStream";
@@ -45,10 +122,10 @@ export default function SimulationPage() {
   const params = useParams();
   const runId = params.runId as string;
 
-  // Core state
+  // Core state — initialise from mock data, replaced when backend responds
   const [run, setRun] = useState<Run>(mockRun);
-  const [agents] = useState<Agent[]>(mockAgents);
-  const [tasks] = useState<Task[]>(mockTasks);
+  const [agents, setAgents] = useState<Agent[]>(mockAgents);
+  const [tasks, setTasks] = useState<Task[]>(mockTasks);
   const [events, setEvents] = useState<RunEvent[]>(mockEvents);
   const [outcome] = useState<Outcome | null>(mockOutcome);
 
@@ -70,10 +147,22 @@ export default function SimulationPage() {
     let mounted = true;
 
     async function init() {
-      const res = await getRun(runId);
+      const res = await getRunFull(runId);
       if (res.data && mounted) {
-        setRun(res.data);
-        setMode(res.data.mode);
+        // Map backend run → frontend Run
+        const mappedRun = mapBackendRun(res.data.run);
+        setRun((prev) => ({ ...prev, ...mappedRun }));
+        if (mappedRun.mode) setMode(mappedRun.mode);
+
+        // Map backend agents (if any)
+        if (res.data.agents?.length) {
+          setAgents(res.data.agents.map(mapBackendAgent));
+        }
+
+        // Map backend tasks (if any)
+        if (res.data.tasks?.length) {
+          setTasks(res.data.tasks.map(mapBackendTask));
+        }
       }
 
       // Connect to SSE stream
