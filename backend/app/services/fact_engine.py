@@ -83,12 +83,27 @@ async def generate_daily_fact(fs: FirestoreClient, settings: Settings) -> dict[s
 
         text = response.content[0].text.strip()
         # Handle markdown fenced JSON
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        if "```" in text:
+            # Extract JSON between code fences
+            parts = text.split("```")
+            for part in parts[1:]:
+                cleaned = part.strip()
+                if cleaned.startswith("json"):
+                    cleaned = cleaned[4:].strip()
+                if cleaned.startswith("{"):
+                    text = cleaned.split("```")[0].strip()
+                    break
 
         fact_data = json.loads(text)
+
+        # Validate required fields
+        required = ["fact", "category", "explanation"]
+        for field in required:
+            if field not in fact_data:
+                raise ValueError(f"Missing required field: {field}")
+
     except Exception as e:
-        logger.error("Fact generation failed: %s", e)
+        logger.error("Fact generation failed: %s", e, exc_info=True)
         fact_data = {
             "fact": "The human brain can store approximately 2.5 petabytes of information — roughly equivalent to 3 million hours of TV recordings.",
             "category": "science",

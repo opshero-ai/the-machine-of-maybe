@@ -13,12 +13,17 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     PERPLEXITY_API_KEY: str = ""
     FIRESTORE_DATABASE: str = "(default)"
-    CORS_ORIGINS: list[str] = [
-        "https://korondy.com",
-        "http://localhost:3000",
-    ]
+    CORS_ORIGINS: str = '["https://korondy.com","http://localhost:3000"]'
     PRIMARY_MODEL: str = "claude-opus-4-6"
     LOG_LEVEL: str = "INFO"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        import json
+        try:
+            return json.loads(self.CORS_ORIGINS)
+        except (json.JSONDecodeError, TypeError):
+            return ["https://korondy.com", "http://localhost:3000"]
 
     model_config = {
         "env_file": ".env",
