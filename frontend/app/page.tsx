@@ -1,173 +1,151 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { BUILT_IN_TEMPLATES, getRandomTemplate } from "@/lib/templates";
-import { createScenario, startRun } from "@/lib/api";
-import { SHOWCASE_CARDS } from "@/lib/showcase-data";
-import type {
-  UrgencyLevel,
-  RiskTolerance,
-  AutonomyLevel,
-  SimulationMode,
-} from "@/types/entities";
+import { getTodaysFact, getFactArchive, streamChat, type Fact, type ChatChunk } from "@/lib/api";
+import { CATEGORY_CONFIG, type FactCategory } from "@/types/entities";
 
-// ─── Example Chips ───
+// ─── Chat Message Type ───
 
-const EXAMPLE_CHIPS = BUILT_IN_TEMPLATES.slice(0, 3).map((t) => ({
-  label: t.title,
-  prompt: t.prompt,
-}));
-
-// ─── How It Works Steps ───
-
-const STEPS = [
-  {
-    number: "01",
-    title: "Describe",
-    description: "Write a messy, real-world scenario in plain language.",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M6 7h8M6 10h6M6 13h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
-  },
-  {
-    number: "02",
-    title: "Compile",
-    description: "AI parses your chaos into structured constraints, risks, and a task graph.",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M10 6v4l3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
-  },
-  {
-    number: "03",
-    title: "Orchestrate",
-    description: "Six specialized agents collaborate, negotiate, and build a coordinated plan.",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <circle cx="6" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
-        <circle cx="14" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
-        <circle cx="10" cy="14" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M8 7.5l2 4.5M12 7.5l-2 4.5" stroke="currentColor" strokeWidth="1" strokeDasharray="2 2"/>
-      </svg>
-    ),
-  },
-  {
-    number: "04",
-    title: "Outcome",
-    description: "A complete operating plan with risks scored, approvals flagged, and alternatives mapped.",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <path d="M6 10l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-      </svg>
-    ),
-  },
-];
-
-// ─── Agent Roles (for the agent strip) ───
-
-const AGENT_ROLES = [
-  { role: "Architect", color: "#6366f1", desc: "Decomposes & plans" },
-  { role: "Analyst", color: "#06b6d4", desc: "Models risk & cost" },
-  { role: "Operator", color: "#f59e0b", desc: "Executes & coordinates" },
-  { role: "Guardian", color: "#ef4444", desc: "Safety & compliance" },
-  { role: "Escalation", color: "#8b5cf6", desc: "Decisions & comms" },
-  { role: "Narrator", color: "#64748b", desc: "Timeline & reporting" },
-];
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
 
 // ─── Animation Variants ───
 
-const containerVariants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.1, delayChildren: 0.2 } },
-};
-
-const itemVariants = {
+const fadeUp = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] as const } },
+};
+
+const stagger = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.1, delayChildren: 0.15 } },
 };
 
 // ─── Page Component ───
 
 export default function HomePage() {
-  const router = useRouter();
-  const [prompt, setPrompt] = useState("");
-  const [showControls, setShowControls] = useState(false);
-  const [urgency, setUrgency] = useState<UrgencyLevel>("medium");
-  const [riskTolerance, setRiskTolerance] = useState<RiskTolerance>("balanced");
-  const [autonomy, setAutonomy] = useState<AutonomyLevel>("guided");
-  const [isRunning, setIsRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [fact, setFact] = useState<Fact | null>(null);
+  const [factLoading, setFactLoading] = useState(true);
+  const [factError, setFactError] = useState<string | null>(null);
 
-  const handleSurpriseMe = useCallback(() => {
-    const template = getRandomTemplate();
-    setPrompt(template.prompt);
+  const [archive, setArchive] = useState<Fact[]>([]);
+  const [showArchive, setShowArchive] = useState(false);
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load today's fact
+  useEffect(() => {
+    (async () => {
+      const { fact: f, error } = await getTodaysFact();
+      if (f) setFact(f);
+      if (error) setFactError(error);
+      setFactLoading(false);
+    })();
   }, []);
 
-  const handleChipClick = useCallback((chipPrompt: string) => {
-    setPrompt(chipPrompt);
-  }, []);
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  const handleRunSimulation = useCallback(async () => {
-    if (!prompt.trim()) return;
-    setIsRunning(true);
-    setError(null);
+  const handleLoadArchive = useCallback(async () => {
+    if (archive.length > 0) {
+      setShowArchive(!showArchive);
+      return;
+    }
+    const { facts } = await getFactArchive(14);
+    setArchive(facts);
+    setShowArchive(true);
+  }, [archive, showArchive]);
+
+  const handleShareFact = useCallback(() => {
+    if (!fact) return;
+    const text = `Did You Know? ${fact.fact}\n\n${fact.explanation}\n\nhttps://korondy.com`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [fact]);
+
+  const handleSendMessage = useCallback(async () => {
+    const msg = chatInput.trim();
+    if (!msg || isStreaming) return;
+
+    const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content: msg };
+    setMessages((prev) => [...prev, userMsg]);
+    setChatInput("");
+    setIsStreaming(true);
+
+    const assistantMsg: ChatMessage = { id: `a-${Date.now()}`, role: "assistant", content: "" };
+    setMessages((prev) => [...prev, assistantMsg]);
 
     try {
-      const scenarioRes = await createScenario(prompt, {
-        urgency,
-        risk_tolerance: riskTolerance,
-        autonomy,
+      for await (const chunk of streamChat(msg, conversationId)) {
+        if (chunk.type === "meta" && chunk.conversation_id) {
+          setConversationId(chunk.conversation_id);
+        }
+        if (chunk.type === "text" && chunk.content) {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              updated[updated.length - 1] = { ...last, content: last.content + chunk.content };
+            }
+            return updated;
+          });
+        }
+      }
+    } catch (e) {
+      setMessages((prev) => {
+        const updated = [...prev];
+        const last = updated[updated.length - 1];
+        if (last.role === "assistant") {
+          updated[updated.length - 1] = {
+            ...last,
+            content: "Sorry, I had trouble connecting. Try again in a moment!",
+          };
+        }
+        return updated;
       });
-
-      if (scenarioRes.error) {
-        setError(scenarioRes.error);
-        setIsRunning(false);
-        return;
-      }
-
-      const mode: SimulationMode =
-        riskTolerance === "conservative"
-          ? "prove"
-          : autonomy === "autonomous"
-            ? "play"
-            : "explore";
-
-      const runRes = await startRun(scenarioRes.data.id, mode);
-
-      if (runRes.error) {
-        setError(runRes.error);
-        setIsRunning(false);
-        return;
-      }
-
-      router.push(`/simulation/${runRes.data.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setIsRunning(false);
     }
-  }, [prompt, urgency, riskTolerance, autonomy, router]);
+    setIsStreaming(false);
+  }, [chatInput, isStreaming, conversationId]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleSendMessage();
+      }
+    },
+    [handleSendMessage]
+  );
+
+  const categoryInfo = fact ? CATEGORY_CONFIG[fact.category as FactCategory] : null;
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* ─── Hero ─── */}
-      <section className="flex-1 flex flex-col items-center justify-center px-6 py-16 sm:py-20">
+      {/* ─── Hero: Today's Fact ─── */}
+      <section className="flex-shrink-0 px-6 pt-12 pb-8 sm:pt-16 sm:pb-12">
         <motion.div
-          variants={containerVariants}
+          variants={stagger}
           initial="hidden"
           animate="visible"
-          className="w-full max-w-2xl mx-auto flex flex-col items-center"
+          className="mx-auto max-w-3xl text-center"
         >
           {/* Badge */}
-          <motion.div variants={itemVariants} className="mb-6">
+          <motion.div variants={fadeUp} className="mb-8">
             <a
               href="https://opshero.ai"
               target="_blank"
@@ -179,367 +157,312 @@ export default function HomePage() {
                 border: "1px solid var(--color-surface-overlay)",
               }}
             >
-              <span
-                className="inline-block h-1.5 w-1.5 rounded-full"
-                style={{ background: "var(--color-accent)" }}
-              />
-              Built by OpsHero &mdash; Multi-Agent AI Platform
+              <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--color-accent)" }} />
+              Built by OpsHero
             </a>
           </motion.div>
 
           {/* Title */}
           <motion.h1
-            variants={itemVariants}
-            className="text-center text-5xl font-light tracking-tight sm:text-6xl md:text-7xl"
+            variants={fadeUp}
+            className="text-4xl font-light tracking-tight sm:text-5xl md:text-6xl"
             style={{ color: "var(--color-text-primary)" }}
           >
-            The Machine
-            <br />
+            Did You{" "}
             <span className="font-semibold" style={{ color: "var(--color-accent)" }}>
-              of Maybe
+              Know?
             </span>
           </motion.h1>
 
-          {/* Value Proposition */}
-          <motion.p
-            variants={itemVariants}
-            className="mt-5 text-center text-lg leading-relaxed max-w-xl"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            Describe a messy scenario. Watch six AI agents decompose it into
-            a coordinated operating plan &mdash; with risks scored, decisions
-            flagged, and alternatives mapped.
-          </motion.p>
-
-          {/* Prompt Textarea */}
-          <motion.div variants={itemVariants} className="mt-10 w-full">
-            <div className="relative">
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="A shipping company just lost 60% of its fleet to a software glitch. 2,000 packages sit undelivered..."
-                rows={4}
-                className="w-full resize-none rounded-xl border-2 px-5 py-4 text-base leading-relaxed transition-all duration-300 placeholder:opacity-40"
-                style={{
-                  background: "var(--color-surface-raised)",
-                  borderColor: prompt ? "var(--color-accent)" : "var(--color-surface-overlay)",
-                  color: "var(--color-text-primary)",
-                  fontFamily: "var(--font-sans)",
-                  outline: "none",
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "var(--color-accent)";
-                  e.currentTarget.style.boxShadow = "0 0 0 4px rgba(226, 163, 54, 0.12)";
-                }}
-                onBlur={(e) => {
-                  if (!prompt) e.currentTarget.style.borderColor = "var(--color-surface-overlay)";
-                  e.currentTarget.style.boxShadow = "none";
-                }}
-              />
-            </div>
-          </motion.div>
-
-          {/* Example Chips + Surprise Me */}
-          <motion.div
-            variants={itemVariants}
-            className="mt-4 flex flex-wrap items-center justify-center gap-2"
-          >
-            {EXAMPLE_CHIPS.map((chip) => (
-              <button
-                key={chip.label}
-                onClick={() => handleChipClick(chip.prompt)}
-                className="rounded-full px-4 py-1.5 text-sm transition-all duration-200 hover:scale-[1.03]"
-                style={{
-                  background: "var(--color-surface-overlay)",
-                  color: "var(--color-text-secondary)",
-                  border: "1px solid transparent",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "var(--color-accent-dim)";
-                  e.currentTarget.style.color = "var(--color-text-primary)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "transparent";
-                  e.currentTarget.style.color = "var(--color-text-secondary)";
-                }}
+          {/* Fact Card */}
+          <motion.div variants={fadeUp} className="mt-10">
+            {factLoading ? (
+              <div
+                className="rounded-2xl p-8 animate-pulse"
+                style={{ background: "var(--color-surface-raised)", border: "1px solid var(--color-surface-overlay)" }}
               >
-                {chip.label}
-              </button>
-            ))}
-            <button
-              onClick={handleSurpriseMe}
-              className="rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 hover:scale-[1.03]"
-              style={{
-                background: "transparent",
-                color: "var(--color-accent)",
-                border: "1px solid var(--color-accent-dim)",
-              }}
-            >
-              <span className="mr-1.5">&#x2684;</span>
-              Surprise Me
-            </button>
-          </motion.div>
-
-          {/* Expandable Controls */}
-          <motion.div variants={itemVariants} className="mt-6 w-full">
-            <button
-              onClick={() => setShowControls(!showControls)}
-              className="flex items-center gap-2 text-sm transition-colors"
-              style={{ color: "var(--color-text-muted)" }}
-            >
-              <motion.span
-                animate={{ rotate: showControls ? 90 : 0 }}
-                transition={{ duration: 0.2 }}
-                className="inline-block"
+                <div className="h-6 rounded-lg w-3/4 mx-auto mb-4" style={{ background: "var(--color-surface-overlay)" }} />
+                <div className="h-4 rounded w-full mb-2" style={{ background: "var(--color-surface-overlay)" }} />
+                <div className="h-4 rounded w-2/3 mx-auto" style={{ background: "var(--color-surface-overlay)" }} />
+              </div>
+            ) : factError ? (
+              <div className="rounded-2xl p-8" style={{ background: "var(--color-surface-raised)", border: "1px solid var(--color-surface-overlay)" }}>
+                <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
+                  Couldn&apos;t load today&apos;s fact. {factError}
+                </p>
+              </div>
+            ) : fact ? (
+              <div
+                className="rounded-2xl p-8 text-left"
+                style={{ background: "var(--color-surface-raised)", border: "1px solid var(--color-surface-overlay)" }}
               >
-                &#9656;
-              </motion.span>
-              Simulation controls
-            </button>
-
-            <AnimatePresence>
-              {showControls && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                  className="overflow-hidden"
-                >
-                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <ControlGroup label="Urgency" value={urgency} options={["low", "medium", "high", "critical"]} onChange={(v) => setUrgency(v as UrgencyLevel)} />
-                    <ControlGroup label="Risk Tolerance" value={riskTolerance} options={["conservative", "balanced", "aggressive"]} onChange={(v) => setRiskTolerance(v as RiskTolerance)} />
-                    <ControlGroup label="Autonomy" value={autonomy} options={["supervised", "guided", "autonomous"]} onChange={(v) => setAutonomy(v as AutonomyLevel)} />
+                {/* Category + Rating */}
+                <div className="flex items-center justify-between mb-5">
+                  {categoryInfo && (
+                    <span
+                      className="rounded-full px-3 py-1 text-xs font-medium"
+                      style={{ background: `${categoryInfo.color}15`, color: categoryInfo.color }}
+                    >
+                      {categoryInfo.icon} {categoryInfo.label}
+                    </span>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    {Array.from({ length: 10 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="h-2 w-2 rounded-full transition-all"
+                        style={{
+                          background: i < fact.mind_blown_rating ? "var(--color-accent)" : "var(--color-surface-overlay)",
+                        }}
+                      />
+                    ))}
+                    <span className="ml-1 text-xs font-mono" style={{ color: "var(--color-text-muted)" }}>
+                      {fact.mind_blown_rating}/10
+                    </span>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+
+                {/* The Fact */}
+                <h2 className="text-xl font-semibold leading-relaxed sm:text-2xl" style={{ color: "var(--color-text-primary)" }}>
+                  {fact.fact}
+                </h2>
+
+                {/* Explanation */}
+                <p className="mt-4 text-base leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+                  {fact.explanation}
+                </p>
+
+                {/* Source */}
+                <p className="mt-3 text-xs font-mono" style={{ color: "var(--color-text-muted)" }}>
+                  Source: {fact.source_hint}
+                </p>
+
+                {/* Follow-up Question */}
+                <div
+                  className="mt-5 rounded-xl p-4"
+                  style={{ background: "var(--color-surface)", border: "1px solid var(--color-surface-overlay)" }}
+                >
+                  <p className="text-sm font-medium" style={{ color: "var(--color-accent)" }}>
+                    Think about it:
+                  </p>
+                  <p className="mt-1 text-sm" style={{ color: "var(--color-text-secondary)" }}>
+                    {fact.follow_up_question}
+                  </p>
+                </div>
+
+                {/* Related Facts */}
+                {fact.related_facts?.length > 0 && (
+                  <div className="mt-5 space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-muted)" }}>
+                      Related
+                    </p>
+                    {fact.related_facts.map((rf, i) => (
+                      <div key={i} className="flex items-start gap-2 text-sm">
+                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ background: "var(--color-accent-dim)" }} />
+                        <span style={{ color: "var(--color-text-secondary)" }}>{rf}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="mt-6 flex items-center gap-3">
+                  <button
+                    onClick={handleShareFact}
+                    className="rounded-lg px-4 py-2 text-xs font-medium transition-colors"
+                    style={{
+                      background: copied ? "var(--color-accent)20" : "var(--color-surface)",
+                      color: copied ? "var(--color-accent)" : "var(--color-text-secondary)",
+                      border: `1px solid ${copied ? "var(--color-accent)40" : "var(--color-surface-overlay)"}`,
+                    }}
+                  >
+                    {copied ? "Copied!" : "Share this fact"}
+                  </button>
+                  <button
+                    onClick={handleLoadArchive}
+                    className="rounded-lg px-4 py-2 text-xs font-medium transition-colors"
+                    style={{
+                      background: "var(--color-surface)",
+                      color: "var(--color-text-secondary)",
+                      border: "1px solid var(--color-surface-overlay)",
+                    }}
+                  >
+                    {showArchive ? "Hide archive" : "Past facts"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </motion.div>
 
-          {/* Error */}
+          {/* Archive */}
           <AnimatePresence>
-            {error && (
+            {showArchive && archive.length > 0 && (
               <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                className="mt-4 w-full rounded-lg px-4 py-3 text-sm"
-                style={{ background: "var(--color-state-failed)15", color: "var(--color-state-failed)" }}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-6 overflow-hidden"
               >
-                {error}
+                <div className="space-y-3">
+                  {archive
+                    .filter((a) => a.date !== fact?.date)
+                    .map((a) => {
+                      const cat = CATEGORY_CONFIG[a.category as FactCategory];
+                      return (
+                        <div
+                          key={a.date}
+                          className="rounded-xl p-4 text-left"
+                          style={{ background: "var(--color-surface-raised)", border: "1px solid var(--color-surface-overlay)" }}
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-mono" style={{ color: "var(--color-text-muted)" }}>
+                              {a.date}
+                            </span>
+                            {cat && (
+                              <span className="text-xs" style={{ color: cat.color }}>
+                                {cat.icon} {cat.label}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
+                            {a.fact}
+                          </p>
+                          <p className="mt-1 text-xs" style={{ color: "var(--color-text-secondary)" }}>
+                            {a.explanation}
+                          </p>
+                        </div>
+                      );
+                    })}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
-
-          {/* Buttons */}
-          <motion.div variants={itemVariants} className="mt-8 flex flex-wrap items-center justify-center gap-4">
-            {/* Run Simulation */}
-            <motion.button
-              onClick={handleRunSimulation}
-              disabled={!prompt.trim() || isRunning}
-              whileHover={prompt.trim() && !isRunning ? { scale: 1.03 } : {}}
-              whileTap={prompt.trim() && !isRunning ? { scale: 0.98 } : {}}
-              className="relative rounded-xl px-10 py-3.5 text-base font-semibold transition-all duration-300 disabled:cursor-not-allowed"
-              style={{
-                background: !prompt.trim() || isRunning ? "var(--color-surface-overlay)" : "var(--color-accent)",
-                color: !prompt.trim() || isRunning ? "var(--color-text-muted)" : "var(--color-text-inverse)",
-                boxShadow: prompt.trim() && !isRunning ? "0 0 24px rgba(226, 163, 54, 0.25)" : "none",
-              }}
-            >
-              {isRunning ? (
-                <span className="flex items-center gap-2">
-                  <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="inline-block">&#x2699;</motion.span>
-                  Compiling...
-                </span>
-              ) : (
-                "Run Simulation"
-              )}
-            </motion.button>
-
-            {/* View Example */}
-            <Link
-              href="/simulation/example"
-              className="rounded-xl px-8 py-3.5 text-base font-medium transition-all duration-200 hover:scale-[1.02]"
-              style={{
-                color: "var(--color-text-secondary)",
-                border: "1px solid var(--color-surface-overlay)",
-              }}
-            >
-              View Example
-            </Link>
-
-            {/* Gallery */}
-            <Link
-              href="/gallery"
-              className="rounded-xl px-6 py-3.5 text-sm font-medium transition-all duration-200 hover:scale-[1.02]"
-              style={{ color: "var(--color-text-muted)" }}
-            >
-              Browse Gallery &rarr;
-            </Link>
-          </motion.div>
         </motion.div>
       </section>
 
-      {/* ─── Showcase: Example Outcomes ─── */}
-      <section className="border-t px-6 py-16" style={{ borderColor: "var(--color-surface-overlay)" }}>
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.6 }}
-          className="mx-auto max-w-5xl"
-        >
-          <h2 className="text-center text-sm font-semibold uppercase tracking-widest mb-3" style={{ color: "var(--color-text-muted)" }}>
-            What it produces
-          </h2>
-          <p className="text-center text-base mb-10" style={{ color: "var(--color-text-secondary)" }}>
-            Each simulation generates a structured operating plan, risk register, and decision audit trail.
-          </p>
+      {/* ─── Chat Section ─── */}
+      <section className="flex-1 flex flex-col px-6 pb-8">
+        <div className="mx-auto w-full max-w-3xl flex-1 flex flex-col">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-px flex-1" style={{ background: "var(--color-surface-overlay)" }} />
+            <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-muted)" }}>
+              Ask me anything
+            </h2>
+            <div className="h-px flex-1" style={{ background: "var(--color-surface-overlay)" }} />
+          </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {SHOWCASE_CARDS.map((card, idx) => (
-              <motion.div
-                key={card.title}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.1, duration: 0.5 }}
-              >
-                <Link
-                  href={idx === 0 ? "/simulation/example" : "#"}
-                  className="block rounded-xl p-5 transition-all duration-200 hover:scale-[1.02]"
-                  style={{
-                    background: "var(--color-surface-raised)",
-                    border: "1px solid var(--color-surface-overlay)",
-                  }}
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <span
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold"
-                      style={{ background: `${card.color}20`, color: card.color }}
+          {/* Messages */}
+          <div
+            className="flex-1 overflow-y-auto rounded-xl p-4 mb-4 space-y-4"
+            style={{
+              background: "var(--color-surface-raised)",
+              border: "1px solid var(--color-surface-overlay)",
+              minHeight: "200px",
+              maxHeight: "400px",
+            }}
+          >
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-center py-8">
+                <p className="text-3xl mb-3 opacity-30">?</p>
+                <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
+                  Ask about today&apos;s fact, or anything you&apos;re curious about.
+                </p>
+                <div className="flex flex-wrap justify-center gap-2 mt-4">
+                  {[
+                    "Tell me more about today's fact",
+                    "What's the most surprising thing about space?",
+                    "Why do we dream?",
+                  ].map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      onClick={() => {
+                        setChatInput(suggestion);
+                        inputRef.current?.focus();
+                      }}
+                      className="rounded-full px-3 py-1.5 text-xs transition-colors"
+                      style={{
+                        background: "var(--color-surface)",
+                        color: "var(--color-text-secondary)",
+                        border: "1px solid var(--color-surface-overlay)",
+                      }}
                     >
-                      {card.agents}
-                    </span>
-                    <div>
-                      <h3 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>{card.title}</h3>
-                      <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>{card.domain}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs mb-3" style={{ color: "var(--color-text-muted)" }}>
-                    <span>{card.agents} agents</span>
-                    <span style={{ color: "var(--color-surface-overlay)" }}>|</span>
-                    <span>{card.tasks} tasks</span>
-                    <span style={{ color: "var(--color-surface-overlay)" }}>|</span>
-                    <span>{card.duration}</span>
-                  </div>
-                  <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{card.result}</p>
-                  {idx === 0 && (
-                    <span className="mt-3 inline-block text-xs font-medium" style={{ color: "var(--color-accent)" }}>
-                      View full simulation &rarr;
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className="max-w-[80%] rounded-xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap"
+                  style={
+                    msg.role === "user"
+                      ? { background: "var(--color-accent)", color: "var(--color-text-inverse)" }
+                      : { background: "var(--color-surface)", color: "var(--color-text-primary)" }
+                  }
+                >
+                  {msg.content || (
+                    <span className="flex items-center gap-1">
+                      <span className="typing-dot inline-block h-2 w-2 rounded-full" style={{ background: "var(--color-text-muted)" }} />
+                      <span className="typing-dot inline-block h-2 w-2 rounded-full" style={{ background: "var(--color-text-muted)" }} />
+                      <span className="typing-dot inline-block h-2 w-2 rounded-full" style={{ background: "var(--color-text-muted)" }} />
                     </span>
                   )}
-                </Link>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      </section>
-
-      {/* ─── Agent Architecture ─── */}
-      <section className="border-t px-6 py-16" style={{ borderColor: "var(--color-surface-overlay)" }}>
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.6 }}
-          className="mx-auto max-w-5xl"
-        >
-          <h2 className="text-center text-sm font-semibold uppercase tracking-widest mb-3" style={{ color: "var(--color-text-muted)" }}>
-            Six specialized agents
-          </h2>
-          <p className="text-center text-base mb-10" style={{ color: "var(--color-text-secondary)" }}>
-            Each scenario is handled by a team of AI agents with distinct roles, just like a real operations team.
-          </p>
-
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {AGENT_ROLES.map((agent, idx) => (
-              <motion.div
-                key={agent.role}
-                initial={{ opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.06, duration: 0.4 }}
-                className="rounded-xl p-4 text-center"
-                style={{
-                  background: "var(--color-surface-raised)",
-                  border: "1px solid var(--color-surface-overlay)",
-                }}
-              >
-                <div
-                  className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold"
-                  style={{ background: `${agent.color}15`, color: agent.color }}
-                >
-                  {agent.role.charAt(0)}
                 </div>
-                <h3 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
-                  {agent.role}
-                </h3>
-                <p className="mt-1 text-xs" style={{ color: "var(--color-text-muted)" }}>
-                  {agent.desc}
-                </p>
-              </motion.div>
+              </div>
             ))}
+            <div ref={chatEndRef} />
           </div>
-        </motion.div>
-      </section>
 
-      {/* ─── How It Works ─── */}
-      <section className="border-t px-6 py-16" style={{ borderColor: "var(--color-surface-overlay)" }}>
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true, margin: "-100px" }}
-          transition={{ duration: 0.6 }}
-          className="mx-auto max-w-4xl"
-        >
-          <h2 className="text-center text-sm font-semibold uppercase tracking-widest mb-12" style={{ color: "var(--color-text-muted)" }}>
-            How it works
-          </h2>
-
-          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
-            {STEPS.map((step, idx) => (
-              <motion.div
-                key={step.number}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.1, duration: 0.5 }}
-                className="text-center"
-              >
-                <div
-                  className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl"
-                  style={{
-                    background: "var(--color-surface-raised)",
-                    color: "var(--color-accent)",
-                    border: "1px solid var(--color-surface-overlay)",
-                  }}
-                >
-                  {step.icon}
-                </div>
-                <h3 className="text-lg font-semibold mb-2" style={{ color: "var(--color-text-primary)" }}>
-                  {step.title}
-                </h3>
-                <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
-                  {step.description}
-                </p>
-              </motion.div>
-            ))}
+          {/* Input */}
+          <div className="relative">
+            <textarea
+              ref={inputRef}
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask me anything..."
+              rows={2}
+              className="w-full resize-none rounded-xl border-2 px-4 py-3 pr-14 text-sm leading-relaxed transition-all placeholder:opacity-40"
+              style={{
+                background: "var(--color-surface-raised)",
+                borderColor: chatInput ? "var(--color-accent)" : "var(--color-surface-overlay)",
+                color: "var(--color-text-primary)",
+                outline: "none",
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "var(--color-accent)";
+                e.currentTarget.style.boxShadow = "0 0 0 4px rgba(226, 163, 54, 0.12)";
+              }}
+              onBlur={(e) => {
+                if (!chatInput) e.currentTarget.style.borderColor = "var(--color-surface-overlay)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
+            />
+            <button
+              onClick={handleSendMessage}
+              disabled={!chatInput.trim() || isStreaming}
+              className="absolute right-3 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
+              style={{
+                background: chatInput.trim() && !isStreaming ? "var(--color-accent)" : "var(--color-surface-overlay)",
+                color: chatInput.trim() && !isStreaming ? "var(--color-text-inverse)" : "var(--color-text-muted)",
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M2.5 8L13 2.5 10 8l3 5.5z" />
+              </svg>
+            </button>
           </div>
-        </motion.div>
+        </div>
       </section>
 
       {/* ─── Footer ─── */}
-      <footer className="border-t px-6 py-8 text-center" style={{ borderColor: "var(--color-surface-overlay)" }}>
+      <footer className="border-t px-6 py-6 text-center" style={{ borderColor: "var(--color-surface-overlay)" }}>
         <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
           Built with organized intelligence.{" "}
           <a
@@ -555,50 +478,6 @@ export default function HomePage() {
           </a>
         </p>
       </footer>
-    </div>
-  );
-}
-
-// ─── Control Group ───
-
-function ControlGroup({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--color-text-muted)" }}>
-        {label}
-      </label>
-      <div className="flex rounded-lg p-0.5" style={{ background: "var(--color-surface)" }}>
-        {options.map((opt) => (
-          <button
-            key={opt}
-            onClick={() => onChange(opt)}
-            className="relative flex-1 rounded-md px-2 py-1.5 text-xs font-medium capitalize transition-colors"
-            style={{
-              color: value === opt ? "var(--color-text-inverse)" : "var(--color-text-muted)",
-            }}
-          >
-            {value === opt && (
-              <motion.div
-                layoutId={`control-${label}`}
-                className="absolute inset-0 rounded-md"
-                style={{ background: "var(--color-accent)" }}
-                transition={{ type: "spring", stiffness: 500, damping: 35 }}
-              />
-            )}
-            <span className="relative z-10">{opt}</span>
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

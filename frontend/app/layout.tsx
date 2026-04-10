@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "The Machine of Maybe",
+  title: "Did You Know?",
   description:
-    "Describe a messy challenge. Watch a system organize it. A public orchestration simulator that transforms scenarios into visible multi-agent operating systems.",
+    "A daily dose of verified, mind-blowing facts researched by AI. Ask questions, explore knowledge, and discover something new every day.",
   openGraph: {
-    title: "The Machine of Maybe",
-    description: "Turn an impossible scenario into an operating plan.",
-    siteName: "The Machine of Maybe",
+    title: "Did You Know?",
+    description: "AI-researched facts that will blow your mind. New every day.",
+    siteName: "Did You Know?",
     type: "website",
     url: "https://korondy.com",
   },
