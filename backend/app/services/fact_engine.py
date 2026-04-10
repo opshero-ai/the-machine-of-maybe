@@ -20,34 +20,33 @@ logger = logging.getLogger(__name__)
 
 FACT_COLLECTION = "daily_facts"
 
-GENERATION_PROMPT = """You are a world-class researcher and science communicator. Your job is to produce ONE fascinating, verified "Did You Know?" fact for today.
-
-Requirements:
-1. The fact must be TRUE and verifiable. Do not fabricate or exaggerate.
-2. It should be genuinely surprising — something most educated adults wouldn't know.
-3. It should span diverse topics: science, history, nature, technology, psychology, geography, space, medicine, art, or culture. Vary the category each day.
-4. Include a brief explanation (2-3 sentences) of WHY this fact is true and what makes it interesting.
-5. Include a thought-provoking follow-up question to engage the reader.
-6. Rate how mind-blowing this fact is on a scale of 1-10.
-
-Respond in this exact JSON format:
-{
-  "fact": "The core fact in one clear sentence.",
-  "category": "science|history|nature|technology|psychology|geography|space|medicine|art|culture",
-  "explanation": "2-3 sentences explaining the fact and why it's fascinating.",
-  "source_hint": "A brief note on where this can be verified (e.g., 'Published in Nature, 2023' or 'NASA JPL data').",
-  "follow_up_question": "A thought-provoking question for the reader related to this fact.",
-  "mind_blown_rating": 8,
-  "related_facts": [
-    "A short related fact #1",
-    "A short related fact #2"
-  ]
-}
-
-Today's date: {date}
-Previous recent categories (avoid repeating): {recent_categories}
-
-Generate something truly remarkable."""
+GENERATION_PROMPT_TEMPLATE = (
+    "You are a world-class researcher and science communicator. Your job is to produce "
+    "ONE fascinating, verified \"Did You Know?\" fact for today.\n\n"
+    "Requirements:\n"
+    "1. The fact must be TRUE and verifiable. Do not fabricate or exaggerate.\n"
+    "2. It should be genuinely surprising — something most educated adults wouldn't know.\n"
+    "3. It should span diverse topics: science, history, nature, technology, psychology, "
+    "geography, space, medicine, art, or culture. Vary the category each day.\n"
+    "4. Include a brief explanation (2-3 sentences) of WHY this fact is true and what makes it interesting.\n"
+    "5. Include a thought-provoking follow-up question to engage the reader.\n"
+    "6. Rate how mind-blowing this fact is on a scale of 1-10.\n\n"
+    "Respond in this exact JSON format:\n"
+    "```json\n"
+    '{\n'
+    '  "fact": "The core fact in one clear sentence.",\n'
+    '  "category": "science|history|nature|technology|psychology|geography|space|medicine|art|culture",\n'
+    '  "explanation": "2-3 sentences explaining the fact and why it\'s fascinating.",\n'
+    '  "source_hint": "A brief note on where this can be verified.",\n'
+    '  "follow_up_question": "A thought-provoking question for the reader.",\n'
+    '  "mind_blown_rating": 8,\n'
+    '  "related_facts": ["A short related fact #1", "A short related fact #2"]\n'
+    '}\n'
+    "```\n\n"
+    "Today's date: DATE_PLACEHOLDER\n"
+    "Previous recent categories (avoid repeating): CATEGORIES_PLACEHOLDER\n\n"
+    "Generate something truly remarkable."
+)
 
 
 async def get_todays_fact(fs: FirestoreClient) -> dict[str, Any] | None:
@@ -72,7 +71,7 @@ async def generate_daily_fact(fs: FirestoreClient, settings: Settings) -> dict[s
 
     # Generate via Claude
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    prompt = GENERATION_PROMPT.format(date=today, recent_categories=recent_categories)
+    prompt = GENERATION_PROMPT_TEMPLATE.replace("DATE_PLACEHOLDER", today).replace("CATEGORIES_PLACEHOLDER", recent_categories)
 
     try:
         response = await client.messages.create(
