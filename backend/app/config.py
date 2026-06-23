@@ -9,10 +9,10 @@ logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
-    PROJECT_ID: str = "korondy-tutor"
+    PROJECT_ID: str = "korondy-apps"
     ANTHROPIC_API_KEY: str = ""
     PERPLEXITY_API_KEY: str = ""
-    FIRESTORE_DATABASE: str = "(default)"
+    FIRESTORE_DATABASE: str = "did-you-know"
     CORS_ORIGINS: str = '["https://korondy.com","http://localhost:3000"]'
     PRIMARY_MODEL: str = "claude-opus-4-6"
     LOG_LEVEL: str = "INFO"
