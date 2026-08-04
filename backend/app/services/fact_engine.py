@@ -56,6 +56,29 @@ async def get_todays_fact(fs: FirestoreClient) -> dict[str, Any] | None:
     return doc
 
 
+def _first_text(response: Any) -> str:
+    """Return the first text block of a Claude response.
+
+    Never index ``response.content[0]`` directly. With adaptive thinking the
+    first block can be a thinking block, which has no ``.text`` — the call then
+    raises, and because the caller wraps generation in a broad ``except``, the
+    failure would surface as the hardcoded fallback fact rather than an error.
+    A model bump is enough to trigger this, so select by block type instead of
+    by position.
+    """
+    for block in getattr(response, "content", None) or []:
+        if getattr(block, "type", None) == "text" and getattr(block, "text", None):
+            return block.text
+    # Fall back to any block carrying text, in case a future block type is
+    # text-bearing but not typed "text".
+    for block in getattr(response, "content", None) or []:
+        text = getattr(block, "text", None)
+        if text:
+            return text
+    types = [getattr(b, "type", "?") for b in (getattr(response, "content", None) or [])]
+    raise ValueError(f"No text block in model response; blocks were {types}")
+
+
 async def generate_daily_fact(fs: FirestoreClient, settings: Settings) -> dict[str, Any]:
     """Generate today's fact using Claude, store it, and return it."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -80,7 +103,7 @@ async def generate_daily_fact(fs: FirestoreClient, settings: Settings) -> dict[s
             messages=[{"role": "user", "content": prompt}],
         )
 
-        text = response.content[0].text.strip()
+        text = _first_text(response).strip()
         # Handle markdown fenced JSON
         if "```" in text:
             # Extract JSON between code fences
