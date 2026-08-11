@@ -32,3 +32,22 @@ htmlcov/
 # Misc
 *.log
 .vercel
+
+# ── gcloud credential stores — never commit, never track (OpsHero/GovCon item live-gcloud-credential-store-sits-repos-2026-08-10) ──────
+# A live refresh token for the org-admin identity was found sitting at ~/repos on
+# 2026-08-10, one directory above these repos, created by a task spec that set
+# CLOUDSDK_CONFIG to a source tree. It had never been committed — but 8 of 9 repos
+# would have tracked it if it had landed one level lower. Appended LAST so these
+# win over any earlier negation in this file.
+credentials.db
+access_tokens.db
+default_configs.db
+legacy_credentials/
+application_default_credentials.json
+adc.json
+*.boto
+configurations/config_*
+# ...and the same, at any depth: the pattern above contains a slash, so git
+# anchors it to this directory only, and a config root dropped in a subdirectory
+# would slip past it.
+**/configurations/config_*
